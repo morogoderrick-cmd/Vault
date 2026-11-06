@@ -31,6 +31,11 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(-
 .entry h2{font-size:1.15rem}
 .meta{color:var(--mute);font-size:14px;word-break:break-all}
 .meta a{color:var(--accent)}
+.linkrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.linkrow input{margin:4px 0}
+.linkrow .lbl{flex:1 1 120px}
+.linkrow .url{flex:3 1 200px}
+.linkrow button{padding:8px 12px}
 .pw{font-family:ui-monospace,Menlo,Consolas,monospace;margin:6px 0 10px;word-break:break-all}
 .entry button{padding:5px 10px;font-size:14px}
 details{margin-bottom:16px}
@@ -72,8 +77,14 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
     <summary>Add a password</summary>
     <label for="fSite">Website name</label>
     <input id="fSite" placeholder="Facebook">
-    <label for="fUrl">Website link</label>
-    <input id="fUrl" placeholder="https://facebook.com" inputmode="url">
+    <label>Website links (optional)</label>
+    <div id="linkRows"></div>
+    <button id="addLinkBtn" type="button" style="margin:4px 0 14px">Add another link</button>
+    <datalist id="labelOpts">
+      <option value="Frontend"><option value="Backend"><option value="Admin">
+      <option value="Dashboard"><option value="Login"><option value="API">
+      <option value="Database"><option value="Hosting">
+    </datalist>
     <label for="fUser">Username or email</label>
     <input id="fUser" autocomplete="off">
     <label for="fPass">Password</label>
@@ -174,13 +185,32 @@ function genPassword(n = 16) {
   return Array.from(r, x => chars[x % chars.length]).join('');
 }
 $('genBtn').onclick = () => { $('fPass').value = genPassword(); };
+
+function addLinkRow() {
+  const row = document.createElement('div'); row.className = 'linkrow';
+  const lbl = document.createElement('input');
+  lbl.className = 'lbl'; lbl.placeholder = 'Label (e.g. Frontend)'; lbl.setAttribute('list', 'labelOpts'); lbl.setAttribute('aria-label', 'Link label');
+  const url = document.createElement('input');
+  url.className = 'url'; url.placeholder = 'https://example.com/admin'; url.inputMode = 'url'; url.setAttribute('aria-label', 'Link address');
+  const rm = btn('Remove', () => { if ($('linkRows').children.length > 1) row.remove(); else { lbl.value = ''; url.value = ''; } });
+  row.append(lbl, url, rm);
+  $('linkRows').append(row);
+}
+function resetLinks() { $('linkRows').replaceChildren(); addLinkRow(); }
+function collectLinks() {
+  return Array.from($('linkRows').children)
+    .map(r => ({ label: r.querySelector('.lbl').value.trim(), url: safeUrl(r.querySelector('.url').value) }))
+    .filter(l => l.url);
+}
+$('addLinkBtn').onclick = addLinkRow;
 $('addBtn').onclick = async () => {
   const site = $('fSite').value.trim(), pass = $('fPass').value;
   if (!site || !pass) { $('addErr').textContent = 'Add a website name and a password.'; return; }
   $('addErr').textContent = '';
-  entries.push({ id: crypto.randomUUID(), site, url: safeUrl($('fUrl').value), user: $('fUser').value.trim(), pass });
+  entries.push({ id: crypto.randomUUID(), site, links: collectLinks(), user: $('fUser').value.trim(), pass });
   await save();
-  ['fSite', 'fUrl', 'fUser', 'fPass'].forEach(id => $(id).value = '');
+  ['fSite', 'fUser', 'fPass'].forEach(id => $(id).value = '');
+  resetLinks();
   render();
 };
 
@@ -202,7 +232,13 @@ function render() {
     const d = document.createElement('div'); d.className = 'entry';
     const h = document.createElement('h2'); h.textContent = e.site; d.append(h);
     const m = document.createElement('div'); m.className = 'meta';
-    if (e.url) { const a = document.createElement('a'); a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = e.url; m.append(a); }
+    const links = e.links || (e.url ? [{ label: '', url: e.url }] : []);
+    for (const l of links) {
+      const line = document.createElement('div');
+      if (l.label) { const b = document.createElement('strong'); b.textContent = l.label + ': '; line.append(b); }
+      const a = document.createElement('a'); a.href = l.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = l.url;
+      line.append(a); m.append(line);
+    }
     if (e.user) { const u = document.createElement('div'); u.textContent = e.user; m.append(u); }
     d.append(m);
     const pw = document.createElement('div'); pw.className = 'pw'; pw.textContent = '••••••••••'; d.append(pw);
@@ -244,6 +280,7 @@ $('fileIn').onchange = async ev => {
   ev.target.value = '';
 };
 
+resetLinks();
 showLock();
 </script>
 </body>

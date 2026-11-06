@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Vault</title>
+<style>
+:root{--bg:#EEF1F0;--panel:#fff;--ink:#14232B;--mute:#5B6B72;--line:#D3DCDA;--accent:#1F5F5B;--on:#fff;--bad:#A33A3A}
+@media (prefers-color-scheme:dark){:root{--bg:#10181C;--panel:#18242A;--ink:#E4ECEA;--mute:#93A5AB;--line:#2B3A41;--accent:#5FB7AE;--on:#0B1417;--bad:#E58383}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;margin:0}
+main{max-width:720px;margin:0 auto;padding:24px 16px 64px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}
+input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;margin:4px 0 12px}
+label{font-size:14px;color:var(--mute)}
+button,.btn{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:6px}
+button.primary{background:var(--accent);color:var(--on);border-color:var(--accent);font-weight:600}
+button.danger{color:var(--bad)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.hidden{display:none!important}
+.err{color:var(--bad);min-height:1.5em;margin:0 0 8px}
+.lock{max-width:400px;margin:12vh auto 0}
+.lock h1{font-size:2rem;margin-bottom:6px}
+.lock p{color:var(--mute);margin:0 0 18px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.bar h1{font-size:1.7rem}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.entry{border-top:1px solid var(--line);padding:14px 0}
+.entry:first-child{border-top:0}
+.entry h2{font-size:1.15rem}
+.meta{color:var(--mute);font-size:14px;word-break:break-all}
+.meta a{color:var(--accent)}
+.pw{font-family:ui-monospace,Menlo,Consolas,monospace;margin:6px 0 10px;word-break:break-all}
+.entry button{padding:5px 10px;font-size:14px}
+details{margin-bottom:16px}
+summary{cursor:pointer;font-weight:600;padding:4px 0}
+.empty{color:var(--mute);text-align:center;padding:24px 0}
+.link{background:none;border:0;color:var(--accent);padding:0;text-decoration:underline}
+</style>
+</head>
+<body>
+<main>
+
+<section id="lock" class="panel lock">
+  <h1>My Vault</h1>
+  <p id="lockMsg"></p>
+  <label for="pw">Master password</label>
+  <input id="pw" type="password" autocomplete="current-password">
+  <div id="confirmWrap" class="hidden">
+    <label for="pw2">Confirm master password</label>
+    <input id="pw2" type="password" autocomplete="new-password">
+  </div>
+  <p class="err" id="lockErr" role="alert"></p>
+  <button id="unlockBtn" class="primary">Unlock</button>
+  <p style="margin-top:18px;font-size:14px">
+    Moving from another device?
+    <button class="link" id="importLock">Import a backup</button>
+  </p>
+</section>
+
+<section id="app" class="hidden">
+  <div class="bar">
+    <h1>My Vault</h1>
+    <div class="row">
+      <button id="exportBtn">Export backup</button>
+      <button id="lockBtn" class="primary">Lock</button>
+    </div>
+  </div>
+
+  <details class="panel" open>
+    <summary>Add a password</summary>
+    <label for="fSite">Website name</label>
+    <input id="fSite" placeholder="Facebook">
+    <label for="fUrl">Website link</label>
+    <input id="fUrl" placeholder="https://facebook.com" inputmode="url">
+    <label for="fUser">Username or email</label>
+    <input id="fUser" autocomplete="off">
+    <label for="fPass">Password</label>
+    <input id="fPass" type="text" autocomplete="off">
+    <p class="err" id="addErr" role="alert"></p>
+    <div class="row">
+      <button id="genBtn">Generate strong password</button>
+      <button id="addBtn" class="primary">Save</button>
+    </div>
+  </details>
+
+  <label for="search">Search</label>
+  <input id="search" placeholder="Type a website name">
+  <div id="list" class="panel"></div>
+</section>
+
+</main>
+<input type="file" id="fileIn" accept=".json,application/json" class="hidden">
+
+<script>
+const KEY = 'vault-v1';
+const enc = new TextEncoder(), dec = new TextDecoder();
+const $ = id => document.getElementById(id);
+let cryptoKey = null, salt = null, entries = [], idle = null;
+
+const b64 = buf => { let s = ''; for (const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const getVault = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
+
+async function derive(pw, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function save() {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(JSON.stringify(entries)));
+  localStorage.setItem(KEY, JSON.stringify({ salt: b64(salt), iv: b64(iv), data: b64(ct) }));
+}
+async function openVault(pw, v) {
+  salt = unb64(v.salt);
+  cryptoKey = await derive(pw, salt);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(v.iv) }, cryptoKey, unb64(v.data));
+  entries = JSON.parse(dec.decode(pt));
+}
+
+function showLock() {
+  cryptoKey = null; entries = [];
+  const exists = !!getVault();
+  $('app').classList.add('hidden');
+  $('lock').classList.remove('hidden');
+  $('confirmWrap').classList.toggle('hidden', exists);
+  $('unlockBtn').textContent = exists ? 'Unlock' : 'Create vault';
+  $('lockMsg').textContent = exists
+    ? 'Enter your master password to open your vault.'
+    : 'Create a master password. It can’t be recovered if you forget it.';
+  $('pw').value = ''; $('pw2').value = ''; $('lockErr').textContent = '';
+  $('pw').focus();
+  clearTimeout(idle);
+}
+function showApp() {
+  $('lock').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  render(); bump();
+}
+function bump() { clearTimeout(idle); if (cryptoKey) idle = setTimeout(showLock, 5 * 60 * 1000); }
+['click', 'keydown', 'touchstart'].forEach(e => document.addEventListener(e, bump));
+
+$('unlockBtn').onclick = async () => {
+  const pw = $('pw').value, err = $('lockErr');
+  err.textContent = '';
+  const v = getVault();
+  try {
+    if (!v) {
+      if (pw.length < 8) { err.textContent = 'Use at least 8 characters.'; return; }
+      if (pw !== $('pw2').value) { err.textContent = 'The passwords don’t match.'; return; }
+      salt = crypto.getRandomValues(new Uint8Array(16));
+      cryptoKey = await derive(pw, salt); entries = [];
+      await save();
+    } else {
+      await openVault(pw, v);
+    }
+    showApp();
+  } catch { err.textContent = 'Wrong master password.'; }
+};
+['pw', 'pw2'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('unlockBtn').click(); }));
+$('lockBtn').onclick = showLock;
+
+function safeUrl(u) {
+  u = u.trim(); if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { return new URL(u).href; } catch { return ''; }
+}
+function genPassword(n = 16) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*-_=+';
+  const r = crypto.getRandomValues(new Uint32Array(n));
+  return Array.from(r, x => chars[x % chars.length]).join('');
+}
+$('genBtn').onclick = () => { $('fPass').value = genPassword(); };
+$('addBtn').onclick = async () => {
+  const site = $('fSite').value.trim(), pass = $('fPass').value;
+  if (!site || !pass) { $('addErr').textContent = 'Add a website name and a password.'; return; }
+  $('addErr').textContent = '';
+  entries.push({ id: crypto.randomUUID(), site, url: safeUrl($('fUrl').value), user: $('fUser').value.trim(), pass });
+  await save();
+  ['fSite', 'fUrl', 'fUser', 'fPass'].forEach(id => $(id).value = '');
+  render();
+};
+
+function btn(text, fn, cls) {
+  const b = document.createElement('button');
+  b.textContent = text; if (cls) b.className = cls; b.onclick = fn; return b;
+}
+function render() {
+  const q = $('search').value.trim().toLowerCase();
+  const list = $('list'); list.replaceChildren();
+  const shown = entries.filter(e => e.site.toLowerCase().includes(q))
+    .sort((a, b) => a.site.localeCompare(b.site));
+  if (!shown.length) {
+    const p = document.createElement('p'); p.className = 'empty';
+    p.textContent = entries.length ? 'No websites match your search.' : 'Your vault is empty. Add your first password above.';
+    list.append(p); return;
+  }
+  for (const e of shown) {
+    const d = document.createElement('div'); d.className = 'entry';
+    const h = document.createElement('h2'); h.textContent = e.site; d.append(h);
+    const m = document.createElement('div'); m.className = 'meta';
+    if (e.url) { const a = document.createElement('a'); a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = e.url; m.append(a); }
+    if (e.user) { const u = document.createElement('div'); u.textContent = e.user; m.append(u); }
+    d.append(m);
+    const pw = document.createElement('div'); pw.className = 'pw'; pw.textContent = '••••••••••'; d.append(pw);
+    const row = document.createElement('div'); row.className = 'row';
+    let shownPw = false;
+    row.append(
+      btn('Show', ev => { shownPw = !shownPw; pw.textContent = shownPw ? e.pass : '••••••••••'; ev.target.textContent = shownPw ? 'Hide' : 'Show'; }),
+      btn('Copy password', async ev => {
+        try { await navigator.clipboard.writeText(e.pass); ev.target.textContent = 'Copied'; }
+        catch { ev.target.textContent = 'Copy failed'; }
+        setTimeout(() => { ev.target.textContent = 'Copy password'; navigator.clipboard.writeText('').catch(() => {}); }, 20000);
+      }),
+      btn('Delete', async () => {
+        if (!confirm('Delete ' + e.site + '?')) return;
+        entries = entries.filter(x => x.id !== e.id); await save(); render();
+      }, 'danger'));
+    d.append(row); list.append(d);
+  }
+}
+$('search').oninput = render;
+
+// Backup: the file is the same encrypted data, so it is useless without the master password.
+$('exportBtn').onclick = () => {
+  const blob = new Blob([localStorage.getItem(KEY)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'vault-backup.json'; a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('importLock').onclick = () => $('fileIn').click();
+$('fileIn').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    const v = JSON.parse(await f.text());
+    if (!v.salt || !v.iv || !v.data) throw 0;
+    if (getVault() && !confirm('This replaces the vault stored in this browser. Continue?')) return;
+    localStorage.setItem(KEY, JSON.stringify({ salt: v.salt, iv: v.iv, data: v.data }));
+    showLock();
+  } catch { $('lockErr').textContent = 'That file isn’t a valid vault backup.'; }
+  ev.target.value = '';
+};
+
+showLock();
+</script>
+</body>
+</html>

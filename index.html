@@ -41,6 +41,10 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(-
 details{margin-bottom:16px}
 summary{cursor:pointer;font-weight:600;padding:4px 0}
 .empty{color:var(--mute);text-align:center;padding:24px 0}
+textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;margin:4px 0 12px}
+.small{font-size:14px;color:var(--mute)}
+.dirty{border:1px solid var(--bad);color:var(--bad);background:var(--panel);border-radius:8px;padding:10px 14px;margin:0 0 16px}
+.notes{white-space:pre-wrap;margin-top:4px}
 .link{background:none;border:0;color:var(--accent);padding:0;text-decoration:underline}
 </style>
 </head>
@@ -69,12 +73,14 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
     <h1>My Vault</h1>
     <div class="row">
       <button id="exportBtn">Export backup</button>
+      <button id="importBtn">Import backup</button>
       <button id="lockBtn" class="primary">Lock</button>
     </div>
   </div>
 
-  <details class="panel" open>
-    <summary>Add a password</summary>
+  <p id="dirty" class="dirty hidden" role="status">You have changes that aren’t backed up yet. Click <b>Export backup</b> and keep the file safe.</p>
+  <details class="panel" id="formBox" open>
+    <summary id="formTitle">Add a password</summary>
     <label for="fSite">Website name</label>
     <input id="fSite" placeholder="Facebook">
     <label>Website links (optional)</label>
@@ -89,16 +95,39 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
     <input id="fUser" autocomplete="off">
     <label for="fPass">Password</label>
     <input id="fPass" type="text" autocomplete="off">
+    <p class="small" id="strength" style="margin:-6px 0 10px"></p>
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <label for="fLen">Length</label>
+      <input id="fLen" type="number" min="8" max="64" value="16" style="width:80px;margin:0">
+      <label><input id="fSym" type="checkbox" checked style="width:auto;margin:0 4px 0 0">Symbols</label>
+      <button id="genBtn" type="button">Generate</button>
+    </div>
+    <label for="fNotes">Notes (optional)</label>
+    <textarea id="fNotes" rows="3" placeholder="Security questions, recovery codes, anything else"></textarea>
     <p class="err" id="addErr" role="alert"></p>
     <div class="row">
-      <button id="genBtn">Generate strong password</button>
       <button id="addBtn" class="primary">Save</button>
+      <button id="cancelBtn" class="hidden" type="button">Cancel</button>
     </div>
   </details>
 
   <label for="search">Search</label>
   <input id="search" placeholder="Type a website name">
   <div id="list" class="panel"></div>
+  <details class="panel" style="margin-top:16px">
+    <summary>Settings</summary>
+    <label for="lockSel">Auto-lock after</label>
+    <select id="lockSel"><option value="1">1 minute</option><option value="5">5 minutes</option><option value="15">15 minutes</option></select>
+    <h2 style="font-size:1.1rem;margin:12px 0 8px">Change master password</h2>
+    <label for="cpOld">Current master password</label>
+    <input id="cpOld" type="password" autocomplete="current-password">
+    <label for="cpNew">New master password</label>
+    <input id="cpNew" type="password" autocomplete="new-password">
+    <label for="cpNew2">Confirm new master password</label>
+    <input id="cpNew2" type="password" autocomplete="new-password">
+    <p class="small" id="cpMsg" role="alert"></p>
+    <button id="cpBtn" class="primary">Change master password</button>
+  </details>
 </section>
 
 </main>
@@ -108,7 +137,9 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
 const KEY = 'vault-v1';
 const enc = new TextEncoder(), dec = new TextDecoder();
 const $ = id => document.getElementById(id);
-let cryptoKey = null, salt = null, entries = [], idle = null;
+let cryptoKey = null, salt = null, entries = [], idle = null, dirty = false, editingId = null;
+const lockMins = () => { try { return +localStorage.getItem('vault-lock') || 5; } catch { return 5; } };
+const showDirty = () => $('dirty').classList.toggle('hidden', !dirty);
 
 const b64 = buf => { let s = ''; for (const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -124,6 +155,7 @@ async function save() {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(JSON.stringify(entries)));
   localStorage.setItem(KEY, JSON.stringify({ salt: b64(salt), iv: b64(iv), data: b64(ct) }));
+  dirty = true; showDirty();
 }
 async function openVault(pw, v) {
   salt = unb64(v.salt);
@@ -133,7 +165,7 @@ async function openVault(pw, v) {
 }
 
 function showLock() {
-  cryptoKey = null; entries = [];
+  cryptoKey = null; entries = []; resetForm();
   const exists = !!getVault();
   $('app').classList.add('hidden');
   $('lock').classList.remove('hidden');
@@ -151,7 +183,7 @@ function showApp() {
   $('app').classList.remove('hidden');
   render(); bump();
 }
-function bump() { clearTimeout(idle); if (cryptoKey) idle = setTimeout(showLock, 5 * 60 * 1000); }
+function bump() { clearTimeout(idle); if (cryptoKey) idle = setTimeout(showLock, lockMins() * 60000); }
 ['click', 'keydown', 'touchstart'].forEach(e => document.addEventListener(e, bump));
 
 $('unlockBtn').onclick = async () => {
@@ -179,12 +211,45 @@ function safeUrl(u) {
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
   try { return new URL(u).href; } catch { return ''; }
 }
-function genPassword(n = 16) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*-_=+';
+function genPassword(n = 16, sym = true) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789' + (sym ? '!@#$%^&*-_=+' : '');
   const r = crypto.getRandomValues(new Uint32Array(n));
   return Array.from(r, x => chars[x % chars.length]).join('');
 }
-$('genBtn').onclick = () => { $('fPass').value = genPassword(); };
+$('genBtn').onclick = () => {
+  $('fPass').value = genPassword(Math.min(64, Math.max(8, +$('fLen').value || 16)), $('fSym').checked);
+  checkStrength();
+};
+function checkStrength() {
+  const p = $('fPass').value, el = $('strength');
+  if (!p) { el.textContent = ''; return; }
+  const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(p)).length;
+  const s = p.length >= 16 && kinds >= 3 ? 'Strong' : p.length >= 10 && kinds >= 3 ? 'Good' : p.length >= 8 && kinds >= 2 ? 'Fair' : 'Weak';
+  const reused = entries.some(x => x.pass === p && x.id !== editingId);
+  el.textContent = 'Strength: ' + s + (reused ? ' · already used for another website' : '');
+}
+$('fPass').oninput = checkStrength;
+function resetForm() {
+  editingId = null;
+  ['fSite', 'fUser', 'fPass', 'fNotes'].forEach(id => $(id).value = '');
+  resetLinks(); checkStrength();
+  $('formTitle').textContent = 'Add a password'; $('addBtn').textContent = 'Save';
+  $('cancelBtn').classList.add('hidden');
+}
+$('cancelBtn').onclick = resetForm;
+function startEdit(e) {
+  resetForm(); editingId = e.id;
+  $('fSite').value = e.site; $('fUser').value = e.user || ''; $('fPass').value = e.pass; $('fNotes').value = e.notes || '';
+  const ls = e.links || (e.url ? [{ label: '', url: e.url }] : []);
+  $('linkRows').replaceChildren();
+  (ls.length ? ls : [{ label: '', url: '' }]).forEach(l => {
+    addLinkRow(); const r = $('linkRows').lastChild;
+    r.querySelector('.lbl').value = l.label; r.querySelector('.url').value = l.url;
+  });
+  $('formTitle').textContent = 'Edit ' + e.site; $('addBtn').textContent = 'Update';
+  $('cancelBtn').classList.remove('hidden'); $('formBox').open = true;
+  checkStrength(); $('formBox').scrollIntoView({ behavior: 'smooth' });
+}
 
 function addLinkRow() {
   const row = document.createElement('div'); row.className = 'linkrow';
@@ -207,10 +272,11 @@ $('addBtn').onclick = async () => {
   const site = $('fSite').value.trim(), pass = $('fPass').value;
   if (!site || !pass) { $('addErr').textContent = 'Add a website name and a password.'; return; }
   $('addErr').textContent = '';
-  entries.push({ id: crypto.randomUUID(), site, links: collectLinks(), user: $('fUser').value.trim(), pass });
+  const rec = { site, links: collectLinks(), user: $('fUser').value.trim(), pass, notes: $('fNotes').value.trim() };
+  const old = entries.find(x => x.id === editingId);
+  if (old) Object.assign(old, rec); else entries.push({ id: crypto.randomUUID(), ...rec });
   await save();
-  ['fSite', 'fUser', 'fPass'].forEach(id => $(id).value = '');
-  resetLinks();
+  resetForm();
   render();
 };
 
@@ -222,7 +288,7 @@ function render() {
   const q = $('search').value.trim().toLowerCase();
   const list = $('list'); list.replaceChildren();
   const shown = entries.filter(e => e.site.toLowerCase().includes(q))
-    .sort((a, b) => a.site.localeCompare(b.site));
+    .sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0) || a.site.localeCompare(b.site));
   if (!shown.length) {
     const p = document.createElement('p'); p.className = 'empty';
     p.textContent = entries.length ? 'No websites match your search.' : 'Your vault is empty. Add your first password above.';
@@ -230,7 +296,7 @@ function render() {
   }
   for (const e of shown) {
     const d = document.createElement('div'); d.className = 'entry';
-    const h = document.createElement('h2'); h.textContent = e.site; d.append(h);
+    const h = document.createElement('h2'); h.textContent = (e.fav ? '★ ' : '') + e.site; d.append(h);
     const m = document.createElement('div'); m.className = 'meta';
     const links = e.links || (e.url ? [{ label: '', url: e.url }] : []);
     for (const l of links) {
@@ -240,6 +306,7 @@ function render() {
       line.append(a); m.append(line);
     }
     if (e.user) { const u = document.createElement('div'); u.textContent = e.user; m.append(u); }
+    if (e.notes) { const n = document.createElement('div'); n.className = 'notes'; n.textContent = e.notes; m.append(n); }
     d.append(m);
     const pw = document.createElement('div'); pw.className = 'pw'; pw.textContent = '••••••••••'; d.append(pw);
     const row = document.createElement('div'); row.className = 'row';
@@ -251,6 +318,13 @@ function render() {
         catch { ev.target.textContent = 'Copy failed'; }
         setTimeout(() => { ev.target.textContent = 'Copy password'; navigator.clipboard.writeText('').catch(() => {}); }, 20000);
       }),
+      e.user ? btn('Copy username', async ev => {
+        try { await navigator.clipboard.writeText(e.user); ev.target.textContent = 'Copied'; }
+        catch { ev.target.textContent = 'Copy failed'; }
+        setTimeout(() => { ev.target.textContent = 'Copy username'; }, 2000);
+      }) : '',
+      btn(e.fav ? 'Unpin' : 'Pin', async () => { e.fav = !e.fav; await save(); render(); }),
+      btn('Edit', () => startEdit(e)),
       btn('Delete', async () => {
         if (!confirm('Delete ' + e.site + '?')) return;
         entries = entries.filter(x => x.id !== e.id); await save(); render();
@@ -266,8 +340,10 @@ $('exportBtn').onclick = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'vault-backup.json'; a.click();
   URL.revokeObjectURL(a.href);
+  dirty = false; showDirty();
 };
 $('importLock').onclick = () => $('fileIn').click();
+$('importBtn').onclick = () => $('fileIn').click();
 $('fileIn').onchange = async ev => {
   const f = ev.target.files[0]; if (!f) return;
   try {
@@ -275,11 +351,28 @@ $('fileIn').onchange = async ev => {
     if (!v.salt || !v.iv || !v.data) throw 0;
     if (getVault() && !confirm('This replaces the vault stored in this browser. Continue?')) return;
     localStorage.setItem(KEY, JSON.stringify({ salt: v.salt, iv: v.iv, data: v.data }));
-    showLock();
-  } catch { $('lockErr').textContent = 'That file isn’t a valid vault backup.'; }
+    dirty = false; showLock();
+  } catch { $('lockErr').textContent = 'That file isn’t a valid vault backup.'; alert('That file isn’t a valid vault backup.'); }
   ev.target.value = '';
 };
 
+$('lockSel').value = String(lockMins());
+$('lockSel').onchange = () => { try { localStorage.setItem('vault-lock', $('lockSel').value); } catch {} bump(); };
+$('cpBtn').onclick = async () => {
+  const msg = $('cpMsg'), v = getVault();
+  msg.textContent = '';
+  try {
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(v.iv) }, await derive($('cpOld').value, unb64(v.salt)), unb64(v.data));
+  } catch { msg.textContent = 'Your current master password is wrong.'; return; }
+  const nw = $('cpNew').value;
+  if (nw.length < 8) { msg.textContent = 'Use at least 8 characters.'; return; }
+  if (nw !== $('cpNew2').value) { msg.textContent = 'The new passwords don’t match.'; return; }
+  salt = crypto.getRandomValues(new Uint8Array(16));
+  cryptoKey = await derive(nw, salt);
+  await save();
+  ['cpOld', 'cpNew', 'cpNew2'].forEach(id => $(id).value = '');
+  msg.textContent = 'Master password changed. Export a new backup now, because older backups still need the old password.';
+};
 resetLinks();
 showLock();
 </script>

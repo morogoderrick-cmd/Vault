@@ -97,8 +97,6 @@ textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border
     <input id="fPass" type="text" autocomplete="off">
     <p class="small" id="strength" style="margin:-6px 0 10px"></p>
     <div class="row" style="align-items:center;margin-bottom:12px">
-      <label for="fLen">Length</label>
-      <input id="fLen" type="number" min="8" max="64" value="16" style="width:80px;margin:0">
       <label><input id="fSym" type="checkbox" checked style="width:auto;margin:0 4px 0 0">Symbols</label>
       <button id="genBtn" type="button">Generate</button>
     </div>
@@ -217,7 +215,7 @@ function genPassword(n = 16, sym = true) {
   return Array.from(r, x => chars[x % chars.length]).join('');
 }
 $('genBtn').onclick = () => {
-  $('fPass').value = genPassword(Math.min(64, Math.max(8, +$('fLen').value || 16)), $('fSym').checked);
+  $('fPass').value = genPassword(16, $('fSym').checked);
   checkStrength();
 };
 function checkStrength() {

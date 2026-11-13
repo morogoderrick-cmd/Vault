@@ -1,70 +1,35 @@
 # My Vault
 
-A simple password manager that runs entirely in your web browser. You save your websites, links, usernames and passwords, and everything is locked behind one master password.
+A password manager with accounts. Log in from any phone or laptop and see the same vault.
 
-There is **no backend and no server**. Nothing you type is ever sent anywhere.
+**Your passwords are encrypted in your browser** with a key made from your master password. The server only stores scrambled data and a login token, so even the server owner can’t read your passwords. **Nobody can recover a forgotten master password.**
 
-## How it works
+## Put it online (free, about 15 minutes)
 
-- You create a master password the first time you open the page.
-- Your master password is turned into an encryption key (PBKDF2, 600,000 rounds).
-- Your entries are encrypted with that key (AES-256-GCM) using the browser's built-in Web Crypto.
-- The encrypted data is saved in your browser's local storage, on your device only.
-- The master password itself is never stored.
+### 1. Free database (Neon)
+1. Go to neon.tech and sign up. Create a project.
+2. Copy the **connection string** (it starts with `postgresql://`). Keep it private.
 
-## Features
+### 2. Put the files on GitHub
+1. Create a new repository (a **private** one is best).
+2. Upload everything in this folder, keeping the `public` folder: `server.js`, `package.json`, `README.md` and `public/` (with `index.html`, `app.js`, `style.css`).
 
-- Save a website name, link, username and password
-- Search your saved websites
-- Show or hide a password, and copy it to the clipboard (the clipboard is cleared after 20 seconds)
-- Generate strong random passwords
-- Open a saved link in a new tab
-- Auto-lock after 5 minutes without activity
-- Export and import an encrypted backup
+### 3. Host it (Render)
+1. Go to render.com, sign up, click **New → Web Service**, and connect your GitHub repository.
+2. Build command: `npm install`  Start command: `npm start`
+3. Under **Environment**, add three variables:
+   - `DATABASE_URL` = your Neon connection string
+   - `SESSION_SECRET` = any random text of 40+ characters
+   - `NODE_ENV` = `production`
+4. Deploy. Open the link Render gives you and create your account.
 
-## Host it on GitHub Pages
+The free Render plan sleeps when unused, so the first visit after a break can take about a minute.
 
-1. Create a new repository on GitHub.
-2. Upload `index.html` (and this README) to it.
-3. Go to **Settings → Pages**.
-4. Under **Branch**, choose `main` and the `/ (root)` folder, then save.
-5. After a minute or two, your site is live at `https://YOUR-NAME.github.io/REPOSITORY-NAME`.
+## Moving your old vault in
+Log in, open **Settings and import**, choose your old `vault-backup.json`, type the old vault’s master password, and click Import.
 
-The site is public, but it contains no passwords. Your data exists only in the browser where you use it.
-
-## Back up your vault (do this regularly)
-
-Because there is no server, **your browser is the only place your data lives.** If it's lost or cleared, so is your vault, unless you have a backup.
-
-1. Open the vault and click **Export backup**.
-2. A file called `vault-backup.json` is downloaded. It is encrypted, so it is useless without your master password.
-3. Keep copies in at least two places, such as a USB drive, a cloud drive, or an email to yourself.
-4. Export again every time you add or change passwords.
-
-## Restore on a new device
-
-1. Open your site on the new phone or computer.
-2. On the lock screen, tap **Import a backup** and choose your `vault-backup.json` file.
-3. Enter your master password to unlock it.
-
-## If you lose your phone
-
-- **You have a backup:** open the site on a new device, import the backup, and unlock it with your master password. Nothing is lost.
-- **You have no backup:** the vault can't be recovered, because it only existed on that phone. Use each website's "Forgot password" option to regain access to your accounts, then start a new vault and make a backup straight away.
-- **Is my data safe on the lost phone?** The vault is encrypted, so someone who finds the phone can't read it without your master password. A long, unique master password protects you best. If you're worried, change the passwords of your most important accounts.
-
-## Important to know
-
-- **If you forget your master password, your data can't be recovered.** Nobody can reset it, because no server knows it.
-- Use a long master password that you don't use anywhere else. Passphrases of four or more random words work well.
-- Don't use it on shared or public computers.
-- Clearing your browser data, or using private/incognito mode, will erase or hide your vault. Export a backup first.
-- Your data does not sync between devices. Use Export and Import to move it.
-- Never put your master password or `vault-backup.json` in a public repository.
-
-## Files
-
-| File | Purpose |
-| --- | --- |
-| `index.html` | The whole app (page, styles and code in one file) |
-| `README.md` | This guide |
+## Good to know
+- Use a long passphrase. 10 characters is the minimum, more is better.
+- Export a backup now and then (**Export backup**). Keep it somewhere safe.
+- You are logged out after 5 minutes of inactivity, or instantly when you press **Escape**.
+- If you open the vault on two devices and change it on both, the second save is refused and the latest version reloads, so nothing is silently overwritten.

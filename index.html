@@ -74,6 +74,8 @@ textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border
     <div class="row">
       <button id="exportBtn">Export backup</button>
       <button id="importBtn">Import backup</button>
+      <button id="healthBtn">Password health</button>
+      <button id="csvBtn">Import from Chrome</button>
       <button id="lockBtn" class="primary">Lock</button>
     </div>
   </div>
@@ -83,6 +85,9 @@ textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border
     <summary id="formTitle">Add a password</summary>
     <label for="fSite">Website name</label>
     <input id="fSite" placeholder="Facebook">
+    <label for="fCat">Category (optional)</label>
+    <input id="fCat" list="catOpts" placeholder="Work, Social, Banking...">
+    <datalist id="catOpts"><option value="Work"><option value="Personal"><option value="Social"><option value="Banking"><option value="Shopping"><option value="Email"></datalist>
     <label>Website links (optional)</label>
     <div id="linkRows"></div>
     <button id="addLinkBtn" type="button" style="margin:4px 0 14px">Add another link</button>
@@ -111,6 +116,8 @@ textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border
 
   <label for="search">Search</label>
   <input id="search" placeholder="Type a website name">
+  <div id="cats" class="row" style="margin-bottom:12px"></div>
+  <div id="health" class="panel hidden" style="margin-bottom:16px"></div>
   <div id="list" class="panel"></div>
   <details class="panel" style="margin-top:16px">
     <summary>Settings</summary>
@@ -130,6 +137,7 @@ textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border
 
 </main>
 <input type="file" id="fileIn" accept=".json,application/json" class="hidden">
+<input type="file" id="csvIn" accept=".csv,text/csv" class="hidden">
 
 <script>
 const KEY = 'vault-v1';
@@ -229,7 +237,7 @@ function checkStrength() {
 $('fPass').oninput = checkStrength;
 function resetForm() {
   editingId = null;
-  ['fSite', 'fUser', 'fPass', 'fNotes'].forEach(id => $(id).value = '');
+  ['fSite', 'fCat', 'fUser', 'fPass', 'fNotes'].forEach(id => $(id).value = '');
   resetLinks(); checkStrength();
   $('formTitle').textContent = 'Add a password'; $('addBtn').textContent = 'Save';
   $('cancelBtn').classList.add('hidden');
@@ -237,7 +245,7 @@ function resetForm() {
 $('cancelBtn').onclick = resetForm;
 function startEdit(e) {
   resetForm(); editingId = e.id;
-  $('fSite').value = e.site; $('fUser').value = e.user || ''; $('fPass').value = e.pass; $('fNotes').value = e.notes || '';
+  $('fSite').value = e.site; $('fUser').value = e.user || ''; $('fPass').value = e.pass; $('fNotes').value = e.notes || ''; $('fCat').value = e.cat || '';
   const ls = e.links || (e.url ? [{ label: '', url: e.url }] : []);
   $('linkRows').replaceChildren();
   (ls.length ? ls : [{ label: '', url: '' }]).forEach(l => {
@@ -270,9 +278,9 @@ $('addBtn').onclick = async () => {
   const site = $('fSite').value.trim(), pass = $('fPass').value;
   if (!site || !pass) { $('addErr').textContent = 'Add a website name and a password.'; return; }
   $('addErr').textContent = '';
-  const rec = { site, links: collectLinks(), user: $('fUser').value.trim(), pass, notes: $('fNotes').value.trim() };
+  const rec = { site, links: collectLinks(), user: $('fUser').value.trim(), pass, notes: $('fNotes').value.trim(), cat: $('fCat').value.trim() };
   const old = entries.find(x => x.id === editingId);
-  if (old) Object.assign(old, rec); else entries.push({ id: crypto.randomUUID(), ...rec });
+  if (old) { rec.ts = old.pass === pass && old.ts ? old.ts : Date.now(); Object.assign(old, rec); } else entries.push({ id: crypto.randomUUID(), ts: Date.now(), ...rec });
   await save();
   resetForm();
   render();
@@ -283,9 +291,9 @@ function btn(text, fn, cls) {
   b.textContent = text; if (cls) b.className = cls; b.onclick = fn; return b;
 }
 function render() {
-  const q = $('search').value.trim().toLowerCase();
+  const q = $('search').value.trim().toLowerCase(); drawCats();
   const list = $('list'); list.replaceChildren();
-  const shown = entries.filter(e => e.site.toLowerCase().includes(q))
+  const shown = entries.filter(e => e.site.toLowerCase().includes(q) && (!catFilter || e.cat === catFilter))
     .sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0) || a.site.localeCompare(b.site));
   if (!shown.length) {
     const p = document.createElement('p'); p.className = 'empty';
@@ -304,6 +312,7 @@ function render() {
       line.append(a); m.append(line);
     }
     if (e.user) { const u = document.createElement('div'); u.textContent = e.user; m.append(u); }
+    const info = [e.cat, e.ts ? 'password changed ' + ago(e.ts) : ''].filter(Boolean).join(' · '); if (info) { const n2 = document.createElement('div'); n2.textContent = info; m.append(n2); }
     if (e.notes) { const n = document.createElement('div'); n.className = 'notes'; n.textContent = e.notes; m.append(n); }
     d.append(m);
     const pw = document.createElement('div'); pw.className = 'pw'; pw.textContent = '••••••••••'; d.append(pw);
@@ -371,6 +380,64 @@ $('cpBtn').onclick = async () => {
   ['cpOld', 'cpNew', 'cpNew2'].forEach(id => $(id).value = '');
   msg.textContent = 'Master password changed. Export a new backup now, because older backups still need the old password.';
 };
+let catFilter = '';
+const ago = t => { const d = Math.floor((Date.now() - t) / 864e5); return d < 1 ? 'today' : d < 60 ? d + ' days ago' : Math.floor(d / 30) + ' months ago'; };
+function drawCats() {
+  const box = $('cats'); box.replaceChildren();
+  const cs = [...new Set(entries.map(e => e.cat).filter(Boolean))].sort();
+  if (!cs.length) return;
+  if (catFilter && !cs.includes(catFilter)) catFilter = '';
+  ['', ...cs].forEach(c => box.append(btn(c || 'All', () => { catFilter = c; render(); }, c === catFilter ? 'primary' : '')));
+}
+$('healthBtn').onclick = () => {
+  const box = $('health'); box.classList.toggle('hidden');
+  if (box.classList.contains('hidden')) return;
+  box.replaceChildren();
+  const weak = [], old = [], by = {};
+  const isWeak = p => p.length < 10 || [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(p)).length < 3;
+  entries.forEach(e => {
+    (by[e.pass] = by[e.pass] || []).push(e.site);
+    if (isWeak(e.pass)) weak.push(e.site);
+    if (!e.ts || Date.now() - e.ts > 180 * 864e5) old.push(e.site + (e.ts ? '' : ' (age unknown)'));
+  });
+  const sec = (t, l) => { const h = document.createElement('h2'); h.style.fontSize = '1.05rem'; h.textContent = t + ' (' + l.length + ')'; const p = document.createElement('p'); p.className = 'small'; p.textContent = l.length ? l.join(', ') : 'None. Good.'; box.append(h, p); };
+  const t = document.createElement('h2'); t.textContent = 'Password health'; box.append(t);
+  sec('Weak passwords', weak);
+  sec('Reused passwords', Object.values(by).filter(a => a.length > 1).map(a => a.join(' + ')));
+  sec('Not changed in 6 months', old);
+};
+function parseCSV(t) {
+  const rows = []; let r = [], f = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { r.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && t[i + 1] === '\n') i++; r.push(f); f = ''; if (r.some(x => x)) rows.push(r); r = []; }
+    else f += c;
+  }
+  r.push(f); if (r.some(x => x)) rows.push(r); return rows;
+}
+$('csvBtn').onclick = () => $('csvIn').click();
+$('csvIn').onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  const rows = parseCSV((await f.text()).replace(/^\uFEFF/, '')), head = (rows.shift() || []).map(h => h.trim().toLowerCase());
+  const iN = head.indexOf('name'), iU = head.indexOf('url'), iUs = head.indexOf('username'), iP = head.indexOf('password'), iNo = head.indexOf('note');
+  if (iP < 0 || (iU < 0 && iN < 0)) { alert('That doesn’t look like a Chrome passwords file. It needs name, url, username and password columns.'); return; }
+  let added = 0;
+  for (const r of rows) {
+    const pass = r[iP] || ''; if (!pass) continue;
+    const url = iU >= 0 ? safeUrl(r[iU] || '') : '';
+    let site = (iN >= 0 && r[iN]) || ''; if (!site && url) { try { site = new URL(url).hostname; } catch {} }
+    const user = iUs >= 0 ? r[iUs] || '' : '';
+    if (!site || entries.some(e => e.site === site && e.user === user && e.pass === pass)) continue;
+    entries.push({ id: crypto.randomUUID(), ts: Date.now(), site, links: url ? [{ label: '', url }] : [], user, pass, notes: iNo >= 0 ? r[iNo] || '' : '', cat: '' });
+    added++;
+  }
+  await save(); render();
+  alert(added + ' passwords imported. Now delete the CSV file from your device, because it holds your passwords in plain text.');
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && cryptoKey) showLock(); });
 resetLinks();
 showLock();
 </script>

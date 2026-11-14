@@ -33,3 +33,4 @@ Log in, open **Settings and import**, choose your old `vault-backup.json`, type 
 - Export a backup now and then (**Export backup**). Keep it somewhere safe.
 - You are logged out after 5 minutes of inactivity, or instantly when you press **Escape**.
 - If you open the vault on two devices and change it on both, the second save is refused and the latest version reloads, so nothing is silently overwritten.
+- 

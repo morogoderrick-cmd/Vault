@@ -4,69 +4,442 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>My Vault</title>
-<link rel="stylesheet" href="style.css">
+<style>
+:root{--bg:#EEF1F0;--panel:#fff;--ink:#14232B;--mute:#5B6B72;--line:#D3DCDA;--accent:#1F5F5B;--on:#fff;--bad:#A33A3A}
+@media (prefers-color-scheme:dark){:root{--bg:#10181C;--panel:#18242A;--ink:#E4ECEA;--mute:#93A5AB;--line:#2B3A41;--accent:#5FB7AE;--on:#0B1417;--bad:#E58383}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;margin:0}
+main{max-width:720px;margin:0 auto;padding:24px 16px 64px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}
+input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;margin:4px 0 12px}
+label{font-size:14px;color:var(--mute)}
+button,.btn{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:6px}
+button.primary{background:var(--accent);color:var(--on);border-color:var(--accent);font-weight:600}
+button.danger{color:var(--bad)}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.hidden{display:none!important}
+.err{color:var(--bad);min-height:1.5em;margin:0 0 8px}
+.lock{max-width:400px;margin:12vh auto 0}
+.lock h1{font-size:2rem;margin-bottom:6px}
+.lock p{color:var(--mute);margin:0 0 18px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.bar h1{font-size:1.7rem}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.entry{border-top:1px solid var(--line);padding:14px 0}
+.entry:first-child{border-top:0}
+.entry h2{font-size:1.15rem}
+.meta{color:var(--mute);font-size:14px;word-break:break-all}
+.meta a{color:var(--accent)}
+.linkrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.linkrow input{margin:4px 0}
+.linkrow .lbl{flex:1 1 120px}
+.linkrow .url{flex:3 1 200px}
+.linkrow button{padding:8px 12px}
+.pw{font-family:ui-monospace,Menlo,Consolas,monospace;margin:6px 0 10px;word-break:break-all}
+.entry button{padding:5px 10px;font-size:14px}
+details{margin-bottom:16px}
+summary{cursor:pointer;font-weight:600;padding:4px 0}
+.empty{color:var(--mute);text-align:center;padding:24px 0}
+textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;margin:4px 0 12px}
+.small{font-size:14px;color:var(--mute)}
+.dirty{border:1px solid var(--bad);color:var(--bad);background:var(--panel);border-radius:8px;padding:10px 14px;margin:0 0 16px}
+.notes{white-space:pre-wrap;margin-top:4px}
+.link{background:none;border:0;color:var(--accent);padding:0;text-decoration:underline}
+</style>
 </head>
 <body>
 <main>
-<section id="auth" class="card narrow">
+
+<section id="lock" class="panel lock">
   <h1>My Vault</h1>
-  <p id="amsg" class="muted"></p>
-  <label for="au">Username</label>
-  <input id="au" autocomplete="off" autocapitalize="none" spellcheck="false">
-  <label for="ap">Master password</label>
-  <input id="ap" type="password" autocomplete="off">
-  <div id="aw2" hidden>
-    <label for="ap2">Confirm master password</label>
-    <input id="ap2" type="password" autocomplete="off">
-    <p class="muted">Nobody can reset or recover your master password, not even the server owner. Use a long passphrase of at least 10 characters.</p>
+  <p id="lockMsg"></p>
+  <label for="pw">Master password</label>
+  <input id="pw" type="password" autocomplete="current-password">
+  <div id="confirmWrap" class="hidden">
+    <label for="pw2">Confirm master password</label>
+    <input id="pw2" type="password" autocomplete="new-password">
   </div>
-  <p id="aerr" class="bad" role="alert"></p>
-  <div class="row"><button id="ago" class="primary" type="button">Log in</button><button id="aswap" class="link" type="button">New here? Create an account</button></div>
+  <p class="err" id="lockErr" role="alert"></p>
+  <button id="unlockBtn" class="primary">Unlock</button>
+  <p style="margin-top:18px;font-size:14px">
+    Moving from another device?
+    <button class="link" id="importLock">Import a backup</button>
+  </p>
 </section>
 
-<section id="app" hidden>
-  <div class="bar"><h1>My Vault</h1>
-    <div class="row"><span id="who" class="muted"></span><button id="exp" type="button">Export backup</button><button id="out" class="primary" type="button">Log out</button></div>
+<section id="app" class="hidden">
+  <div class="bar">
+    <h1>My Vault</h1>
+    <div class="row">
+      <button id="exportBtn">Export backup</button>
+      <button id="importBtn">Import backup</button>
+      <button id="healthBtn">Password health</button>
+      <button id="csvBtn">Import from Chrome</button>
+      <button id="lockBtn" class="primary">Lock</button>
+    </div>
   </div>
-  <p id="status" class="muted" role="status"></p>
-  <details id="fbox" class="card" open>
-    <summary id="ftitle">Add a password</summary>
-    <label for="fSite">Website name</label><input id="fSite" placeholder="Facebook">
+
+  <p id="dirty" class="dirty hidden" role="status">You have changes that aren’t backed up yet. Click <b>Export backup</b> and keep the file safe.</p>
+  <details class="panel" id="formBox" open>
+    <summary id="formTitle">Add a password</summary>
+    <label for="fSite">Website name</label>
+    <input id="fSite" placeholder="Facebook">
+    <label for="fCat">Category (optional)</label>
+    <input id="fCat" list="catOpts" placeholder="Work, Social, Banking...">
+    <datalist id="catOpts"><option value="Work"><option value="Personal"><option value="Social"><option value="Banking"><option value="Shopping"><option value="Email"></datalist>
     <label>Website links (optional)</label>
-    <div id="rows"></div>
-    <button id="more" type="button">Add another link</button>
-    <datalist id="lbls"><option value="Frontend"><option value="Backend"><option value="Admin"><option value="Dashboard"><option value="Login"><option value="API"><option value="Database"><option value="Hosting"></datalist>
-    <p></p>
-    <label for="fUser">Username or email</label><input id="fUser" autocomplete="off">
+    <div id="linkRows"></div>
+    <button id="addLinkBtn" type="button" style="margin:4px 0 14px">Add another link</button>
+    <datalist id="labelOpts">
+      <option value="Frontend"><option value="Backend"><option value="Admin">
+      <option value="Dashboard"><option value="Login"><option value="API">
+      <option value="Database"><option value="Hosting">
+    </datalist>
+    <label for="fUser">Username or email</label>
+    <input id="fUser" autocomplete="off">
     <label for="fPass">Password</label>
-    <div class="pwrap"><input id="fPass" type="password" autocomplete="off"><button id="show" type="button">Show</button></div>
-    <p id="strength" class="muted"></p>
-    <div class="row"><button id="gen" type="button">Generate</button><label class="row"><input id="sym" type="checkbox" checked style="width:auto;margin:0"> Symbols</label></div>
-    <p></p>
-    <label for="fNotes">Notes (optional)</label><textarea id="fNotes" rows="3" placeholder="Security questions, recovery codes, anything else"></textarea>
-    <p id="ferr" class="bad" role="alert"></p>
-    <div class="row"><button id="add" class="primary" type="button">Save</button><button id="cancel" type="button" hidden>Cancel</button></div>
+    <input id="fPass" type="text" autocomplete="off">
+    <p class="small" id="strength" style="margin:-6px 0 10px"></p>
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <label><input id="fSym" type="checkbox" checked style="width:auto;margin:0 4px 0 0">Symbols</label>
+      <button id="genBtn" type="button">Generate</button>
+    </div>
+    <label for="fNotes">Notes (optional)</label>
+    <textarea id="fNotes" rows="3" placeholder="Security questions, recovery codes, anything else"></textarea>
+    <p class="err" id="addErr" role="alert"></p>
+    <div class="row">
+      <button id="addBtn" class="primary">Save</button>
+      <button id="cancelBtn" class="hidden" type="button">Cancel</button>
+    </div>
   </details>
-  <label for="q">Search</label><input id="q" placeholder="Type a website name">
-  <div id="list" class="card"></div>
-  <details class="card">
-    <summary>Settings and import</summary>
-    <h3>Change master password</h3><p></p>
-    <label for="cpo">Current master password</label><input id="cpo" type="password" autocomplete="off">
-    <label for="cpn">New master password (10+ characters)</label><input id="cpn" type="password" autocomplete="off">
-    <label for="cpn2">Confirm new master password</label><input id="cpn2" type="password" autocomplete="off">
-    <p id="cpmsg" class="muted" role="alert"></p>
-    <button id="cpgo" type="button">Change master password</button>
-    <hr style="margin:20px 0;border:0;border-top:1px solid var(--line)">
-    <h3>Import a backup</h3>
-    <p class="muted">Works with backups from this app and from the older standalone vault. For an older backup, also type that vault’s master password.</p>
-    <input id="ifile" type="file" accept=".json,application/json">
-    <label for="oldpw">Old vault’s master password (older backups only)</label><input id="oldpw" type="password" autocomplete="off">
-    <p id="imsg" class="muted" role="alert"></p>
-    <button id="igo" type="button">Import</button>
+
+  <label for="search">Search</label>
+  <input id="search" placeholder="Type a website name">
+  <div id="cats" class="row" style="margin-bottom:12px"></div>
+  <div id="health" class="panel hidden" style="margin-bottom:16px"></div>
+  <div id="list" class="panel"></div>
+  <details class="panel" style="margin-top:16px">
+    <summary>Settings</summary>
+    <label for="lockSel">Auto-lock after</label>
+    <select id="lockSel"><option value="1">1 minute</option><option value="5">5 minutes</option><option value="15">15 minutes</option></select>
+    <h2 style="font-size:1.1rem;margin:12px 0 8px">Change master password</h2>
+    <label for="cpOld">Current master password</label>
+    <input id="cpOld" type="password" autocomplete="current-password">
+    <label for="cpNew">New master password</label>
+    <input id="cpNew" type="password" autocomplete="new-password">
+    <label for="cpNew2">Confirm new master password</label>
+    <input id="cpNew2" type="password" autocomplete="new-password">
+    <p class="small" id="cpMsg" role="alert"></p>
+    <button id="cpBtn" class="primary">Change master password</button>
   </details>
 </section>
+
 </main>
-<script src="app.js"></script>
+<input type="file" id="fileIn" accept=".json,application/json" class="hidden">
+<input type="file" id="csvIn" accept=".csv,text/csv" class="hidden">
+
+<script>
+const KEY = 'vault-v1';
+const enc = new TextEncoder(), dec = new TextDecoder();
+const $ = id => document.getElementById(id);
+let cryptoKey = null, salt = null, entries = [], idle = null, dirty = false, editingId = null;
+const lockMins = () => { try { return +localStorage.getItem('vault-lock') || 5; } catch { return 5; } };
+const showDirty = () => $('dirty').classList.toggle('hidden', !dirty);
+
+const b64 = buf => { let s = ''; for (const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const getVault = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
+
+async function derive(pw, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function save() {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, enc.encode(JSON.stringify(entries)));
+  localStorage.setItem(KEY, JSON.stringify({ salt: b64(salt), iv: b64(iv), data: b64(ct) }));
+  dirty = true; showDirty();
+}
+async function openVault(pw, v) {
+  salt = unb64(v.salt);
+  cryptoKey = await derive(pw, salt);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(v.iv) }, cryptoKey, unb64(v.data));
+  entries = JSON.parse(dec.decode(pt));
+}
+
+function showLock() {
+  cryptoKey = null; entries = []; resetForm();
+  const exists = !!getVault();
+  $('app').classList.add('hidden');
+  $('lock').classList.remove('hidden');
+  $('confirmWrap').classList.toggle('hidden', exists);
+  $('unlockBtn').textContent = exists ? 'Unlock' : 'Create vault';
+  $('lockMsg').textContent = exists
+    ? 'Enter your master password to open your vault.'
+    : 'Create a master password. It can’t be recovered if you forget it.';
+  $('pw').value = ''; $('pw2').value = ''; $('lockErr').textContent = '';
+  $('pw').focus();
+  clearTimeout(idle);
+}
+function showApp() {
+  $('lock').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  render(); bump();
+}
+function bump() { clearTimeout(idle); if (cryptoKey) idle = setTimeout(showLock, lockMins() * 60000); }
+['click', 'keydown', 'touchstart'].forEach(e => document.addEventListener(e, bump));
+
+$('unlockBtn').onclick = async () => {
+  const pw = $('pw').value, err = $('lockErr');
+  err.textContent = '';
+  const v = getVault();
+  try {
+    if (!v) {
+      if (pw.length < 8) { err.textContent = 'Use at least 8 characters.'; return; }
+      if (pw !== $('pw2').value) { err.textContent = 'The passwords don’t match.'; return; }
+      salt = crypto.getRandomValues(new Uint8Array(16));
+      cryptoKey = await derive(pw, salt); entries = [];
+      await save();
+    } else {
+      await openVault(pw, v);
+    }
+    showApp();
+  } catch { err.textContent = 'Wrong master password.'; }
+};
+['pw', 'pw2'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('unlockBtn').click(); }));
+$('lockBtn').onclick = showLock;
+
+function safeUrl(u) {
+  u = u.trim(); if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  try { return new URL(u).href; } catch { return ''; }
+}
+function genPassword(n = 16, sym = true) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789' + (sym ? '!@#$%^&*-_=+' : '');
+  const r = crypto.getRandomValues(new Uint32Array(n));
+  return Array.from(r, x => chars[x % chars.length]).join('');
+}
+$('genBtn').onclick = () => {
+  $('fPass').value = genPassword(16, $('fSym').checked);
+  checkStrength();
+};
+function checkStrength() {
+  const p = $('fPass').value, el = $('strength');
+  if (!p) { el.textContent = ''; return; }
+  const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(p)).length;
+  const s = p.length >= 16 && kinds >= 3 ? 'Strong' : p.length >= 10 && kinds >= 3 ? 'Good' : p.length >= 8 && kinds >= 2 ? 'Fair' : 'Weak';
+  const reused = entries.some(x => x.pass === p && x.id !== editingId);
+  el.textContent = 'Strength: ' + s + (reused ? ' · already used for another website' : '');
+}
+$('fPass').oninput = checkStrength;
+function resetForm() {
+  editingId = null;
+  ['fSite', 'fCat', 'fUser', 'fPass', 'fNotes'].forEach(id => $(id).value = '');
+  resetLinks(); checkStrength();
+  $('formTitle').textContent = 'Add a password'; $('addBtn').textContent = 'Save';
+  $('cancelBtn').classList.add('hidden');
+}
+$('cancelBtn').onclick = resetForm;
+function startEdit(e) {
+  resetForm(); editingId = e.id;
+  $('fSite').value = e.site; $('fUser').value = e.user || ''; $('fPass').value = e.pass; $('fNotes').value = e.notes || ''; $('fCat').value = e.cat || '';
+  const ls = e.links || (e.url ? [{ label: '', url: e.url }] : []);
+  $('linkRows').replaceChildren();
+  (ls.length ? ls : [{ label: '', url: '' }]).forEach(l => {
+    addLinkRow(); const r = $('linkRows').lastChild;
+    r.querySelector('.lbl').value = l.label; r.querySelector('.url').value = l.url;
+  });
+  $('formTitle').textContent = 'Edit ' + e.site; $('addBtn').textContent = 'Update';
+  $('cancelBtn').classList.remove('hidden'); $('formBox').open = true;
+  checkStrength(); $('formBox').scrollIntoView({ behavior: 'smooth' });
+}
+
+function addLinkRow() {
+  const row = document.createElement('div'); row.className = 'linkrow';
+  const lbl = document.createElement('input');
+  lbl.className = 'lbl'; lbl.placeholder = 'Label (e.g. Frontend)'; lbl.setAttribute('list', 'labelOpts'); lbl.setAttribute('aria-label', 'Link label');
+  const url = document.createElement('input');
+  url.className = 'url'; url.placeholder = 'https://example.com/admin'; url.inputMode = 'url'; url.setAttribute('aria-label', 'Link address');
+  const rm = btn('Remove', () => { if ($('linkRows').children.length > 1) row.remove(); else { lbl.value = ''; url.value = ''; } });
+  row.append(lbl, url, rm);
+  $('linkRows').append(row);
+}
+function resetLinks() { $('linkRows').replaceChildren(); addLinkRow(); }
+function collectLinks() {
+  return Array.from($('linkRows').children)
+    .map(r => ({ label: r.querySelector('.lbl').value.trim(), url: safeUrl(r.querySelector('.url').value) }))
+    .filter(l => l.url);
+}
+$('addLinkBtn').onclick = addLinkRow;
+$('addBtn').onclick = async () => {
+  const site = $('fSite').value.trim(), pass = $('fPass').value;
+  if (!site || !pass) { $('addErr').textContent = 'Add a website name and a password.'; return; }
+  $('addErr').textContent = '';
+  const rec = { site, links: collectLinks(), user: $('fUser').value.trim(), pass, notes: $('fNotes').value.trim(), cat: $('fCat').value.trim() };
+  const old = entries.find(x => x.id === editingId);
+  if (old) { rec.ts = old.pass === pass && old.ts ? old.ts : Date.now(); Object.assign(old, rec); } else entries.push({ id: crypto.randomUUID(), ts: Date.now(), ...rec });
+  await save();
+  resetForm();
+  render();
+};
+
+function btn(text, fn, cls) {
+  const b = document.createElement('button');
+  b.textContent = text; if (cls) b.className = cls; b.onclick = fn; return b;
+}
+function render() {
+  const q = $('search').value.trim().toLowerCase(); drawCats();
+  const list = $('list'); list.replaceChildren();
+  const shown = entries.filter(e => e.site.toLowerCase().includes(q) && (!catFilter || e.cat === catFilter))
+    .sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0) || a.site.localeCompare(b.site));
+  if (!shown.length) {
+    const p = document.createElement('p'); p.className = 'empty';
+    p.textContent = entries.length ? 'No websites match your search.' : 'Your vault is empty. Add your first password above.';
+    list.append(p); return;
+  }
+  for (const e of shown) {
+    const d = document.createElement('div'); d.className = 'entry';
+    const h = document.createElement('h2'); h.textContent = (e.fav ? '★ ' : '') + e.site; d.append(h);
+    const m = document.createElement('div'); m.className = 'meta';
+    const links = e.links || (e.url ? [{ label: '', url: e.url }] : []);
+    for (const l of links) {
+      const line = document.createElement('div');
+      if (l.label) { const b = document.createElement('strong'); b.textContent = l.label + ': '; line.append(b); }
+      const a = document.createElement('a'); a.href = l.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = l.url;
+      line.append(a); m.append(line);
+    }
+    if (e.user) { const u = document.createElement('div'); u.textContent = e.user; m.append(u); }
+    const info = [e.cat, e.ts ? 'password changed ' + ago(e.ts) : ''].filter(Boolean).join(' · '); if (info) { const n2 = document.createElement('div'); n2.textContent = info; m.append(n2); }
+    if (e.notes) { const n = document.createElement('div'); n.className = 'notes'; n.textContent = e.notes; m.append(n); }
+    d.append(m);
+    const pw = document.createElement('div'); pw.className = 'pw'; pw.textContent = '••••••••••'; d.append(pw);
+    const row = document.createElement('div'); row.className = 'row';
+    let shownPw = false;
+    row.append(
+      btn('Show', ev => { shownPw = !shownPw; pw.textContent = shownPw ? e.pass : '••••••••••'; ev.target.textContent = shownPw ? 'Hide' : 'Show'; }),
+      btn('Copy password', async ev => {
+        try { await navigator.clipboard.writeText(e.pass); ev.target.textContent = 'Copied'; }
+        catch { ev.target.textContent = 'Copy failed'; }
+        setTimeout(() => { ev.target.textContent = 'Copy password'; navigator.clipboard.writeText('').catch(() => {}); }, 20000);
+      }),
+      e.user ? btn('Copy username', async ev => {
+        try { await navigator.clipboard.writeText(e.user); ev.target.textContent = 'Copied'; }
+        catch { ev.target.textContent = 'Copy failed'; }
+        setTimeout(() => { ev.target.textContent = 'Copy username'; }, 2000);
+      }) : '',
+      btn(e.fav ? 'Unpin' : 'Pin', async () => { e.fav = !e.fav; await save(); render(); }),
+      btn('Edit', () => startEdit(e)),
+      btn('Delete', async () => {
+        if (!confirm('Delete ' + e.site + '?')) return;
+        entries = entries.filter(x => x.id !== e.id); await save(); render();
+      }, 'danger'));
+    d.append(row); list.append(d);
+  }
+}
+$('search').oninput = render;
+
+// Backup: the file is the same encrypted data, so it is useless without the master password.
+$('exportBtn').onclick = () => {
+  const blob = new Blob([localStorage.getItem(KEY)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'vault-backup.json'; a.click();
+  URL.revokeObjectURL(a.href);
+  dirty = false; showDirty();
+};
+$('importLock').onclick = () => $('fileIn').click();
+$('importBtn').onclick = () => $('fileIn').click();
+$('fileIn').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    const v = JSON.parse(await f.text());
+    if (!v.salt || !v.iv || !v.data) throw 0;
+    if (getVault() && !confirm('This replaces the vault stored in this browser. Continue?')) return;
+    localStorage.setItem(KEY, JSON.stringify({ salt: v.salt, iv: v.iv, data: v.data }));
+    dirty = false; showLock();
+  } catch { $('lockErr').textContent = 'That file isn’t a valid vault backup.'; alert('That file isn’t a valid vault backup.'); }
+  ev.target.value = '';
+};
+
+$('lockSel').value = String(lockMins());
+$('lockSel').onchange = () => { try { localStorage.setItem('vault-lock', $('lockSel').value); } catch {} bump(); };
+$('cpBtn').onclick = async () => {
+  const msg = $('cpMsg'), v = getVault();
+  msg.textContent = '';
+  try {
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(v.iv) }, await derive($('cpOld').value, unb64(v.salt)), unb64(v.data));
+  } catch { msg.textContent = 'Your current master password is wrong.'; return; }
+  const nw = $('cpNew').value;
+  if (nw.length < 8) { msg.textContent = 'Use at least 8 characters.'; return; }
+  if (nw !== $('cpNew2').value) { msg.textContent = 'The new passwords don’t match.'; return; }
+  salt = crypto.getRandomValues(new Uint8Array(16));
+  cryptoKey = await derive(nw, salt);
+  await save();
+  ['cpOld', 'cpNew', 'cpNew2'].forEach(id => $(id).value = '');
+  msg.textContent = 'Master password changed. Export a new backup now, because older backups still need the old password.';
+};
+let catFilter = '';
+const ago = t => { const d = Math.floor((Date.now() - t) / 864e5); return d < 1 ? 'today' : d < 60 ? d + ' days ago' : Math.floor(d / 30) + ' months ago'; };
+function drawCats() {
+  const box = $('cats'); box.replaceChildren();
+  const cs = [...new Set(entries.map(e => e.cat).filter(Boolean))].sort();
+  if (!cs.length) return;
+  if (catFilter && !cs.includes(catFilter)) catFilter = '';
+  ['', ...cs].forEach(c => box.append(btn(c || 'All', () => { catFilter = c; render(); }, c === catFilter ? 'primary' : '')));
+}
+$('healthBtn').onclick = () => {
+  const box = $('health'); box.classList.toggle('hidden');
+  if (box.classList.contains('hidden')) return;
+  box.replaceChildren();
+  const weak = [], old = [], by = {};
+  const isWeak = p => p.length < 10 || [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(p)).length < 3;
+  entries.forEach(e => {
+    (by[e.pass] = by[e.pass] || []).push(e.site);
+    if (isWeak(e.pass)) weak.push(e.site);
+    if (!e.ts || Date.now() - e.ts > 180 * 864e5) old.push(e.site + (e.ts ? '' : ' (age unknown)'));
+  });
+  const sec = (t, l) => { const h = document.createElement('h2'); h.style.fontSize = '1.05rem'; h.textContent = t + ' (' + l.length + ')'; const p = document.createElement('p'); p.className = 'small'; p.textContent = l.length ? l.join(', ') : 'None. Good.'; box.append(h, p); };
+  const t = document.createElement('h2'); t.textContent = 'Password health'; box.append(t);
+  sec('Weak passwords', weak);
+  sec('Reused passwords', Object.values(by).filter(a => a.length > 1).map(a => a.join(' + ')));
+  sec('Not changed in 6 months', old);
+};
+function parseCSV(t) {
+  const rows = []; let r = [], f = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { r.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && t[i + 1] === '\n') i++; r.push(f); f = ''; if (r.some(x => x)) rows.push(r); r = []; }
+    else f += c;
+  }
+  r.push(f); if (r.some(x => x)) rows.push(r); return rows;
+}
+$('csvBtn').onclick = () => $('csvIn').click();
+$('csvIn').onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  const rows = parseCSV((await f.text()).replace(/^\uFEFF/, '')), head = (rows.shift() || []).map(h => h.trim().toLowerCase());
+  const iN = head.indexOf('name'), iU = head.indexOf('url'), iUs = head.indexOf('username'), iP = head.indexOf('password'), iNo = head.indexOf('note');
+  if (iP < 0 || (iU < 0 && iN < 0)) { alert('That doesn’t look like a Chrome passwords file. It needs name, url, username and password columns.'); return; }
+  let added = 0;
+  for (const r of rows) {
+    const pass = r[iP] || ''; if (!pass) continue;
+    const url = iU >= 0 ? safeUrl(r[iU] || '') : '';
+    let site = (iN >= 0 && r[iN]) || ''; if (!site && url) { try { site = new URL(url).hostname; } catch {} }
+    const user = iUs >= 0 ? r[iUs] || '' : '';
+    if (!site || entries.some(e => e.site === site && e.user === user && e.pass === pass)) continue;
+    entries.push({ id: crypto.randomUUID(), ts: Date.now(), site, links: url ? [{ label: '', url }] : [], user, pass, notes: iNo >= 0 ? r[iNo] || '' : '', cat: '' });
+    added++;
+  }
+  await save(); render();
+  alert(added + ' passwords imported. Now delete the CSV file from your device, because it holds your passwords in plain text.');
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && cryptoKey) showLock(); });
+resetLinks();
+showLock();
+</script>
 </body>
 </html>

@@ -24,3 +24,4 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible,
 .lr input{margin:4px 0}.lr .l{flex:1 1 120px;width:auto}.lr .u{flex:3 1 200px;width:auto}
 summary{cursor:pointer;font-weight:600;padding:4px 0}
 .pwrap{position:relative}.pwrap input{padding-right:70px}.pwrap button{position:absolute;right:6px;top:8px;border:0;background:none;color:var(--accent);font-weight:600}
+
